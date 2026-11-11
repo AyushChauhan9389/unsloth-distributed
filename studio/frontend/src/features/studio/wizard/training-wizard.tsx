@@ -34,7 +34,10 @@ import { useT } from "@/i18n";
 import { ChipIcon, Settings01Icon } from "@/lib/hugeicons-derived";
 import { cn } from "@/lib/utils";
 import type { TrainingMethod } from "@/types/training";
+import { CloudSettingsPanel } from "@/features/cloud-jobs/cloud-settings-panel";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
+  CloudServerIcon,
   Database02Icon,
   Edit03Icon,
 } from "@hugeicons/core-free-icons";
@@ -350,8 +353,29 @@ export function TrainingWizard({
   onParamModeChange: (next: ParamMode) => void;
 }) {
   const t = useT();
+  const cloudMode = (useSearch({ strict: false }) as { cloud?: boolean }).cloud === true;
+  const navigate = useNavigate();
   return (
     <div className="flex flex-col gap-6">
+      {cloudMode && (
+        <SectionBox
+          title="Cloud"
+          description="Where this run trains, on which GPU, and when."
+          icon={CloudServerIcon}
+          chipTint="var(--chart-1)"
+          titleAction={
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              onClick={() => void navigate({ to: "/studio" })}
+            >
+              Train on this machine instead
+            </button>
+          }
+        >
+          <CloudSettingsPanel />
+        </SectionBox>
+      )}
       <SectionBox
         title={t("studio.wizard.modelTitle")}
         description={t("studio.wizard.modelDescription")}

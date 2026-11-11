@@ -16,8 +16,9 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { PlayIcon } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useState } from "react";
-import { useSearch } from "@tanstack/react-router";
-import { CloudRunDialog } from "@/features/cloud-jobs/cloud-run-dialog";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { cloudRunBlocker, submitCloudRun, useCloudRunStore } from "@/features/cloud-jobs/cloud-run-store";
+import { toast } from "@/lib/toast";
 import { resolveStartTrainingButtonLabelKey } from "./start-training-cta-state";
 
 function resolveStartTrainingError(input: {
@@ -102,8 +103,22 @@ export function StartTrainingCta() {
     useTrainingActions();
 
   const disabled = startBlocked || !isReady;
-  const [cloudOpen, setCloudOpen] = useState(false);
   const cloudMode = (useSearch({ strict: false }) as { cloud?: boolean }).cloud === true;
+  const navigate = useNavigate();
+  const cloudBlocker = cloudRunBlocker(useCloudRunStore());
+  const cloudWhen = useCloudRunStore((c) => c.when);
+  const [submitting, setSubmitting] = useState(false);
+  const runOnCloud = () => {
+    setSubmitting(true);
+    submitCloudRun()
+      .then((job) => {
+        if (!job) return;
+        toast.success(cloudWhen === "now" ? "Cloud job submitted" : "Cloud job scheduled");
+        void navigate({ to: "/cloud-jobs", search: { job: job.id } });
+      })
+      .catch((e) => toast.error(e instanceof Error ? e.message : String(e)))
+      .finally(() => setSubmitting(false));
+  };
   const buttonLabel = t(
     resolveStartTrainingButtonLabelKey({
       stopRequested,
@@ -150,13 +165,14 @@ export function StartTrainingCta() {
           "transition-colors duration-200",
         )}
         onClick={() => {
-          if (cloudMode) setCloudOpen(true);
+          if (cloudMode) runOnCloud();
           else startTrainingRun().catch(() => undefined);
         }}
-        disabled={cloudMode ? !isReady : disabled}
+        disabled={cloudMode ? !isReady || submitting || cloudBlocker !== null : disabled}
+        title={cloudMode ? (cloudBlocker ?? undefined) : undefined}
       >
         <PlayIcon strokeWidth={1.75} className="size-4" />
-        {cloudMode ? "Run on cloud..." : buttonLabel}
+        {cloudMode ? (cloudWhen === "now" ? "Run on cloud" : "Schedule on cloud") : buttonLabel}
       </Button>
       {!cloudMode && (
         <Button
@@ -164,12 +180,11 @@ export function StartTrainingCta() {
           size="sm"
           className="w-full justify-center rounded-full"
           disabled={!isReady}
-          onClick={() => setCloudOpen(true)}
+          onClick={() => void navigate({ to: "/studio", search: { cloud: true } })}
         >
-          Run on cloud...
+          Run on cloud / schedule...
         </Button>
       )}
-      <CloudRunDialog open={cloudOpen} onOpenChange={setCloudOpen} />
       {errorMessage && (
         <div
           className={cn(

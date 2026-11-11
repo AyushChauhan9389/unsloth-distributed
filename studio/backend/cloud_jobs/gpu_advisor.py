@@ -34,11 +34,13 @@ def required_vram_gb(request: dict) -> tuple[float | None, dict]:
 
 
 def catalog(sky_url: str, infra: str) -> list[dict]:
-    """[{accelerator, memory_gb, price, spot_price, region, instance_type}], cheapest region per GPU, 1 GPU each."""
+    """[{accelerator, memory_gb, vcpus, ram_gb, price, spot_price, region, instance_type, regions:[...]}], 1 GPU each;
+    the top-level price/region is the cheapest region, `regions` lists every region with its own prices."""
     hit = _catalog_cache.get(infra)
     if hit and time.time() - hit[0] < _CACHE_SECONDS:
         return hit[1]
-    body = json.dumps({"gpus_only": True, "clouds": [infra], "require_price": True, "quantity_filter": 1}).encode()
+    body = json.dumps({"gpus_only": True, "clouds": [infra], "require_price": True, "quantity_filter": 1,
+                       "all_regions": True}).encode()
     req = urllib.request.Request(f"{sky_url}/list_accelerators", body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout = 60) as r:
         rid = r.headers.get("X-Skypilot-Request-ID")
@@ -54,8 +56,14 @@ def catalog(sky_url: str, infra: str) -> list[dict]:
             continue
         best = min(rows, key = lambda r: r[7])
         spot = min((r[8] for r in rows if r[8] is not None), default = None)
+        regions = {}  # cheapest 1-GPU machine per region
+        for r in rows:
+            cur = regions.get(r[9])
+            if cur is None or r[7] < cur["price"]:
+                regions[r[9]] = {"region": r[9], "price": r[7], "spot_price": r[8], "instance_type": r[1]}
         out.append({"accelerator": name, "memory_gb": mem, "price": best[7], "spot_price": spot,
-                    "region": best[9], "instance_type": best[1]})
+                    "region": best[9], "instance_type": best[1], "vcpus": best[4], "ram_gb": best[6],
+                    "regions": sorted(regions.values(), key = lambda x: x["price"])})
     _catalog_cache[infra] = (time.time(), out)
     return out
 

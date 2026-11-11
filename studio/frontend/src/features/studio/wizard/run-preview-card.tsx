@@ -22,6 +22,11 @@ import { InformationCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { type ReactElement, type ReactNode, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { useCloudRunStore } from "@/features/cloud-jobs/cloud-run-store";
+import { hourlyFor } from "@/features/cloud-jobs/cloud-settings-panel";
+import { useSearch } from "@tanstack/react-router";
+
+const INFRA_LABEL = { gcp: "Google Cloud", aws: "AWS", kubernetes: "Kubernetes" } as const;
 import { useTrainingResourceDisplayNames } from "../hooks/use-training-resource-display-names";
 import { countNonDefaultAdvancedSettings } from "./advanced-settings-summary";
 import type { ParamMode } from "./training-param-mode";
@@ -329,6 +334,12 @@ export function RunPreviewCard({
 }): ReactElement {
   const t = useT();
   const locale = useLocale();
+  const cloudMode = (useSearch({ strict: false }) as { cloud?: boolean }).cloud === true;
+  const cloud = useCloudRunStore();
+  const cloudGpu = cloud.estimate?.options.find((o) => o.accelerator === cloud.gpu);
+  const cloudHourly = cloudGpu
+    ? hourlyFor(cloudGpu, cloud.useSpot, cloud.regions[0]) * cloud.gpuCount
+    : null;
   const numberFormatter = useMemo(
     () => new Intl.NumberFormat(locale),
     [locale],
@@ -514,17 +525,51 @@ export function RunPreviewCard({
       </section>
 
       <section className="flex flex-col gap-3">
-        <MetaRow
-          label={t("studio.preview.hardware")}
-          wrap
-          value={gpu.available ? gpu.name : t("studio.preview.noGpu")}
-        />
-        {gpu.available && (
-          <MetaRow
-            label={t("studio.preview.vram")}
-            title={`${gpu.memoryTotalGb} GiB`}
-            value={`${Math.round(gpu.memoryTotalGb)} GiB`}
-          />
+        {cloudMode && cloud.launcher === "skypilot" ? (
+          <>
+            <MetaRow
+              label="Runs on"
+              wrap
+              value={`${INFRA_LABEL[cloud.infra]} · ${cloud.regions.length ? cloud.regions.join(" → ") : "any region"}`}
+            />
+            <MetaRow
+              label={t("studio.preview.hardware")}
+              wrap
+              value={
+                cloud.gpu
+                  ? `${cloud.gpu} × ${cloud.gpuCount}${cloudGpu ? ` · ${cloudGpu.memory_gb} GB each` : ""}`
+                  : "Pick a GPU"
+              }
+            />
+            <MetaRow
+              label="Price"
+              value={
+                cloudHourly != null
+                  ? `${cloud.useSpot ? "Spot" : "On-demand"} · $${cloudHourly.toFixed(2)}/h`
+                  : "–"
+              }
+            />
+            <MetaRow
+              label="Max runtime"
+              wrap
+              value={`${cloud.maxHours} h${cloudHourly != null ? ` · up to $${(cloudHourly * cloud.maxHours).toFixed(2)}` : ""}`}
+            />
+          </>
+        ) : (
+          <>
+            <MetaRow
+              label={t("studio.preview.hardware")}
+              wrap
+              value={gpu.available ? gpu.name : t("studio.preview.noGpu")}
+            />
+            {gpu.available && (
+              <MetaRow
+                label={t("studio.preview.vram")}
+                title={`${gpu.memoryTotalGb} GiB`}
+                value={`${Math.round(gpu.memoryTotalGb)} GiB`}
+              />
+            )}
+          </>
         )}
         <MetaRow
           label={t("studio.preview.hfToken")}

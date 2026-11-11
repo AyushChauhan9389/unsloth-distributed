@@ -26,6 +26,7 @@ export interface CloudResources {
   accelerator: string;
   use_spot: boolean;
   disk_size: number;
+  max_hours?: number;
 }
 
 export interface CloudJob {
@@ -56,9 +57,18 @@ export interface CloudJob {
   };
 }
 
+export interface GpuRegion {
+  region: string;
+  price: number;
+  spot_price: number | null;
+  instance_type: string;
+}
 export interface GpuOption {
   accelerator: string;
   memory_gb: number;
+  vcpus: number | null;
+  ram_gb: number | null;
+  regions: GpuRegion[];
   price: number;
   spot_price: number | null;
   hourly: number;
@@ -102,6 +112,14 @@ export async function buildCloudTrainingRequest(): Promise<Record<string, unknow
   if (!prepared.proceed) return null;
   // Cloud GPUs train on a GPU even when this server has none.
   return buildTrainingStartPayload(config, prepared.token, getCachedSystemInfo(), false) as unknown as Record<
+    string,
+    unknown
+  >;
+}
+
+/** The current config as a request, without validation or prompts: only for live GPU estimates. */
+export function currentRequestForEstimate(): Record<string, unknown> {
+  return buildTrainingStartPayload(useTrainingConfigStore.getState(), null, getCachedSystemInfo(), false) as unknown as Record<
     string,
     unknown
   >;
