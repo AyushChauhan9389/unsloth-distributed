@@ -154,11 +154,14 @@ export function CloudJobsPage(): ReactElement {
   const selected = jobs?.find((j) => j.id === selectedId) ?? jobs?.[0] ?? null;
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-6">
-      <div>
-        <h1 className="text-xl font-semibold">Cloud jobs</h1>
-        <p className="text-sm text-muted-foreground">
-          Training runs on cloud GPUs. Start one from the Train page with "Run on cloud".
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Cloud jobs</h1>
+          <p className="text-sm text-muted-foreground">
+            Training runs on cloud GPUs or this machine, now or on a schedule.
+          </p>
+        </div>
+        <Button onClick={() => navigate({ to: "/studio", search: { cloud: true } })}>New cloud run</Button>
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       {jobs && jobs.length === 0 && <p className="text-sm text-muted-foreground">No cloud jobs yet.</p>}

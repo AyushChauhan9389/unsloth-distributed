@@ -14,6 +14,8 @@ export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: "/studio",
   staticData: { titleKey: "studio.routeTitle" },
+  validateSearch: (search: Record<string, unknown>): { cloud?: boolean } =>
+    search.cloud === true || search.cloud === "true" ? { cloud: true } : {},
   beforeLoad: () => requireAuth(),
   component: StudioPage,
 });

@@ -16,6 +16,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { PlayIcon } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useState } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { CloudRunDialog } from "@/features/cloud-jobs/cloud-run-dialog";
 import { resolveStartTrainingButtonLabelKey } from "./start-training-cta-state";
 
@@ -102,6 +103,7 @@ export function StartTrainingCta() {
 
   const disabled = startBlocked || !isReady;
   const [cloudOpen, setCloudOpen] = useState(false);
+  const cloudMode = (useSearch({ strict: false }) as { cloud?: boolean }).cloud === true;
   const buttonLabel = t(
     resolveStartTrainingButtonLabelKey({
       stopRequested,
@@ -148,22 +150,25 @@ export function StartTrainingCta() {
           "transition-colors duration-200",
         )}
         onClick={() => {
-          startTrainingRun().catch(() => undefined);
+          if (cloudMode) setCloudOpen(true);
+          else startTrainingRun().catch(() => undefined);
         }}
-        disabled={disabled}
+        disabled={cloudMode ? !isReady : disabled}
       >
         <PlayIcon strokeWidth={1.75} className="size-4" />
-        {buttonLabel}
+        {cloudMode ? "Run on cloud..." : buttonLabel}
       </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        className="w-full justify-center rounded-full"
-        disabled={!isReady}
-        onClick={() => setCloudOpen(true)}
-      >
-        Run on cloud...
-      </Button>
+      {!cloudMode && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-center rounded-full"
+          disabled={!isReady}
+          onClick={() => setCloudOpen(true)}
+        >
+          Run on cloud...
+        </Button>
+      )}
       <CloudRunDialog open={cloudOpen} onOpenChange={setCloudOpen} />
       {errorMessage && (
         <div
