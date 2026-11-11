@@ -81,11 +81,12 @@ class EstimateBody(BaseModel):
     request: TrainingStartRequest
     infra: Literal["gcp", "aws", "kubernetes"] = "gcp"
     use_spot: bool = True
+    gpu_count: Literal[1, 2, 4, 8] = 1
 
 
 @router.post("/estimate")
 async def estimate_cloud_gpu(body: EstimateBody, current_subject: str = Depends(get_current_subject)):
-    """VRAM this config needs, the cloud's single-GPU options with prices, and the cheapest that fits."""
+    """VRAM this config needs (per GPU), the cloud's machines with `gpu_count` GPUs and their prices, and the cheapest that fits."""
     import asyncio
 
     from cloud_jobs import gpu_advisor
@@ -93,15 +94,17 @@ async def estimate_cloud_gpu(body: EstimateBody, current_subject: str = Depends(
 
     req = body.request.model_dump()
     required, meta = await asyncio.to_thread(gpu_advisor.required_vram_gb, req)
-    options, catalog_error = [], None
+    options, others, catalog_error = [], {}, None
     if body.infra != "kubernetes":  # a cluster's GPUs aren't in the public catalog
+        url = SkyPilotLauncher().url
         try:
-            options = await asyncio.to_thread(gpu_advisor.catalog, SkyPilotLauncher().url, body.infra)
+            options = await asyncio.to_thread(gpu_advisor.catalog, url, body.infra, body.gpu_count)
+            others = await asyncio.to_thread(gpu_advisor.other_counts, url, body.infra, body.gpu_count)
         except Exception as e:
             catalog_error = f"GPU catalog unavailable: {e}"
     ranked, pick = gpu_advisor.suggest(required, options, body.use_spot)
     return {"required_gb": required, "estimate": meta, "options": ranked, "suggested": pick,
-            "headroom": gpu_advisor.HEADROOM, "catalog_error": catalog_error}
+            "other_counts": others, "headroom": gpu_advisor.HEADROOM, "catalog_error": catalog_error}
 
 
 @router.get("")

@@ -338,7 +338,7 @@ export function RunPreviewCard({
   const cloud = useCloudRunStore();
   const cloudGpu = cloud.estimate?.options.find((o) => o.accelerator === cloud.gpu);
   const cloudHourly = cloudGpu
-    ? hourlyFor(cloudGpu, cloud.useSpot, cloud.regions[0]) * cloud.gpuCount
+    ? hourlyFor(cloudGpu, cloud.useSpot, cloud.regions[0]) // whole machine
     : null;
   const numberFormatter = useMemo(
     () => new Intl.NumberFormat(locale),

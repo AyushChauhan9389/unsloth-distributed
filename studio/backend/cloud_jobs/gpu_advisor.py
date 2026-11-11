@@ -2,7 +2,7 @@
 
 VRAM need: Studio's own training estimator (utils.hardware.estimate_required_model_memory_gb), which sizes
 the model from its Hugging Face config, so it works on a server without a GPU.
-Options and prices: SkyPilot's catalog for the chosen cloud (single-GPU instances, cheapest region).
+Options and prices: SkyPilot's catalog for the chosen cloud (machines with N GPUs, every region).
 """
 import json
 import time
@@ -14,9 +14,10 @@ GPU_MEMORY_GB = {
     "L40": 48, "L40S": 48, "A6000": 48, "A40": 48, "A100": 40, "A100-80GB": 80, "H100": 80, "H100-MEGA": 80,
     "H200": 141, "RTXPRO6000": 96, "B200": 180, "B300": 288, "GH200": 96,
 }
+NOT_TRAINABLE = {"Inferentia", "Inferentia2", "Trainium", "Trainium2", "T4g"}
 HEADROOM = 1.15  # leave 15% for fragmentation and activation spikes
 _CACHE_SECONDS = 3600
-_catalog_cache: dict[str, tuple[float, list]] = {}
+_catalog_cache: dict[str, tuple[float, dict]] = {}
 
 
 def required_vram_gb(request: dict) -> tuple[float | None, dict]:
@@ -33,30 +34,54 @@ def required_vram_gb(request: dict) -> tuple[float | None, dict]:
         optimizer = request.get("optim") or "adamw_8bit")
 
 
-def catalog(sky_url: str, infra: str) -> list[dict]:
-    """[{accelerator, memory_gb, vcpus, ram_gb, price, spot_price, region, instance_type, regions:[...]}], 1 GPU each;
-    the top-level price/region is the cheapest region, `regions` lists every region with its own prices."""
+def _raw_catalog(sky_url: str, infra: str) -> dict[str, list]:
+    """SkyPilot's priced GPU machines of every size and region: {gpu name: [row, ...]}, cached for an hour.
+    row: [cloud, instance_type, accelerator, count, vcpus, device_memory, cpu_memory, price, spot_price, region]"""
     hit = _catalog_cache.get(infra)
     if hit and time.time() - hit[0] < _CACHE_SECONDS:
         return hit[1]
-    body = json.dumps({"gpus_only": True, "clouds": [infra], "require_price": True, "quantity_filter": 1,
-                       "all_regions": True}).encode()
+    body = json.dumps({"gpus_only": True, "clouds": [infra], "require_price": True, "all_regions": True}).encode()
     req = urllib.request.Request(f"{sky_url}/list_accelerators", body, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout = 60) as r:
         rid = r.headers.get("X-Skypilot-Request-ID")
     with urllib.request.urlopen(f"{sky_url}/api/get?request_id={rid}", timeout = 300) as r:
         rv = json.load(r)["return_value"]
     rv = json.loads(rv) if isinstance(rv, str) else rv
+    # Unsloth needs whole NVIDIA GPUs on x86 hosts: drop AWS's own chips, ARM-host T4g, and fractional GPUs.
+    rv = {name: [r for r in rows if r[7] is not None and r[3] >= 1 and float(r[3]).is_integer()]
+          for name, rows in rv.items() if name not in NOT_TRAINABLE}
+    _catalog_cache[infra] = (time.time(), rv)
+    return rv
+
+
+def gpu_memory_gb(name: str, rows: list) -> float | None:
+    """Per-GPU memory: the catalog's figure when it has one (new GPUs), else our table."""
+    return next((r[5] for r in rows if r[5]), None) or GPU_MEMORY_GB.get(name)
+
+
+def other_counts(sky_url: str, infra: str, count: int) -> dict[str, list[int]]:
+    """GPUs not sold with exactly `count` per machine, and the per-machine counts they are sold in."""
+    out = {}
+    for name, rows in _raw_catalog(sky_url, infra).items():
+        counts = sorted({int(r[3]) for r in rows})
+        if count not in counts and counts and gpu_memory_gb(name, rows):
+            out[name] = counts
+    return out
+
+
+def catalog(sky_url: str, infra: str, count: int = 1) -> list[dict]:
+    """[{accelerator, memory_gb, vcpus, ram_gb, price, spot_price, region, instance_type, regions:[...]}] for machines with
+    exactly `count` GPUs (memory_gb is per GPU; prices and vCPU/RAM are for the whole machine);
+    the top-level price/region is the cheapest region, `regions` lists every region with its own prices."""
     out = []
-    for name, rows in rv.items():
-        mem = GPU_MEMORY_GB.get(name)
-        # row: [cloud, instance_type, accelerator, count, vcpus, device_memory, cpu_memory, price, spot_price, region]
-        rows = [r for r in rows if r[3] == 1 and r[7] is not None]
+    for name, rows in _raw_catalog(sky_url, infra).items():
+        mem = gpu_memory_gb(name, rows)
+        rows = [r for r in rows if r[3] == count]
         if mem is None or not rows:
             continue
         best = min(rows, key = lambda r: r[7])
         spot = min((r[8] for r in rows if r[8] is not None), default = None)
-        regions = {}  # cheapest 1-GPU machine per region
+        regions = {}  # cheapest machine of this size per region
         for r in rows:
             cur = regions.get(r[9])
             if cur is None or r[7] < cur["price"]:
@@ -64,7 +89,6 @@ def catalog(sky_url: str, infra: str) -> list[dict]:
         out.append({"accelerator": name, "memory_gb": mem, "price": best[7], "spot_price": spot,
                     "region": best[9], "instance_type": best[1], "vcpus": best[4], "ram_gb": best[6],
                     "regions": sorted(regions.values(), key = lambda x: x["price"])})
-    _catalog_cache[infra] = (time.time(), out)
     return out
 
 
@@ -86,6 +110,8 @@ def _selftest():
     ranked, pick = suggest(30, opts, use_spot = True)
     assert pick == "A100-80GB" and [o["fits"] for o in ranked] == [False, True, True]
     assert suggest(None, opts, True)[1] is None and suggest(20, opts, False)[1] == "L4"
+    assert gpu_memory_gb("RTX PRO 4500", [["aws", "g7", "RTX PRO 4500", 1, 8, 32.0, 32, 1.0, None, "r"]]) == 32.0
+    assert gpu_memory_gb("H100", [["gcp", "a3", "H100", 1, 26, None, 234, 9.0, None, "r"]]) == 80
 
 
 _selftest()

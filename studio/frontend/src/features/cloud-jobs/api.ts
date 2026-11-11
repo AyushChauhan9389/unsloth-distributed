@@ -81,6 +81,7 @@ export interface GpuEstimate {
   required_gb: number | null;
   options: GpuOption[];
   suggested: string | null;
+  other_counts?: Record<string, number[]>; // GPUs not sold with the asked count per machine -> counts they are sold in
   headroom: number;
   catalog_error: string | null;
 }
@@ -125,7 +126,12 @@ export function currentRequestForEstimate(): Record<string, unknown> {
   >;
 }
 
-export const estimateCloudGpu = (body: { request: Record<string, unknown>; infra: Infra; use_spot: boolean }) =>
+export const estimateCloudGpu = (body: {
+  request: Record<string, unknown>;
+  infra: Infra;
+  use_spot: boolean;
+  gpu_count: number;
+}) =>
   request<GpuEstimate>("/estimate", { method: "POST", body: JSON.stringify(body) });
 
 export const createCloudJob = (body: {

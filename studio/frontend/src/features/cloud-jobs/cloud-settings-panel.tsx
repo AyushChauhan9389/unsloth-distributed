@@ -72,7 +72,7 @@ export function CloudSettingsPanel(): ReactElement {
     let cancelled = false;
     const id = window.setTimeout(() => {
       useCloudRunStore.getState().set({ estimating: true });
-      estimateCloudGpu({ request: currentRequestForEstimate(), infra: s.infra, use_spot: s.useSpot })
+      estimateCloudGpu({ request: currentRequestForEstimate(), infra: s.infra, use_spot: s.useSpot, gpu_count: s.gpuCount })
         .then((e) => {
           if (cancelled) return;
           const cur = useCloudRunStore.getState();
@@ -91,7 +91,7 @@ export function CloudSettingsPanel(): ReactElement {
       cancelled = true;
       window.clearTimeout(id);
     };
-  }, [s.launcher, s.infra, s.useSpot, configVersion]);
+  }, [s.launcher, s.infra, s.useSpot, s.gpuCount, configVersion]);
 
   const selected = s.estimate?.options.find((o) => o.accelerator === s.gpu);
   const toggleRegion = (region: string) =>
@@ -155,7 +155,7 @@ export function CloudSettingsPanel(): ReactElement {
                     <tr className="border-b text-left">
                       <th className="px-3 py-2 font-medium">GPU</th>
                       <th className="px-3 py-2 font-medium">VRAM</th>
-                      <th className="px-3 py-2 font-medium">vCPU / RAM</th>
+                      <th className="px-3 py-2 font-medium">Machine (vCPU / RAM)</th>
                       <th className="px-3 py-2 text-right font-medium">On-demand</th>
                       <th className="px-3 py-2 text-right font-medium">Spot</th>
                     </tr>
@@ -178,9 +178,15 @@ export function CloudSettingsPanel(): ReactElement {
                           )}
                           {!o.fits && <span className="ml-2 text-xs text-muted-foreground">too small</span>}
                         </td>
-                        <td className="px-3 py-2 tabular-nums">{o.memory_gb} GB</td>
                         <td className="px-3 py-2 tabular-nums">
-                          {o.vcpus ?? "–"} / {o.ram_gb != null ? `${Math.round(o.ram_gb)} GB` : "–"}
+                          {s.gpuCount > 1 ? `${s.gpuCount} × ` : ""}
+                          {o.memory_gb} GB
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">
+                          <div>{o.instance_type}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {o.vcpus ?? "–"} vCPU / {o.ram_gb != null ? `${Math.round(o.ram_gb)} GB` : "–"}
+                          </div>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">{money(o.price)}/h</td>
                         <td className="px-3 py-2 text-right tabular-nums">{money(o.spot_price)}/h</td>
@@ -194,12 +200,28 @@ export function CloudSettingsPanel(): ReactElement {
                 <Input value={s.gpu} placeholder="GPU name, e.g. H100" onChange={(e) => s.set({ gpu: e.target.value })} />
               )
             )}
+            {s.estimate?.other_counts && Object.keys(s.estimate.other_counts).length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                <span>Not sold with {s.gpuCount} per machine:</span>
+                {Object.entries(s.estimate.other_counts).map(([name, counts]) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className="rounded-full border px-2 py-0.5 hover:bg-accent/50"
+                    title={`Switch to ${counts[0]} GPUs per machine`}
+                    onClick={() => s.set({ gpuCount: counts.includes(1) ? 1 : counts[0], gpu: name, regions: [] })}
+                  >
+                    {name} ({counts.join("/")} per machine)
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <Row label="GPUs per machine" hint="More than one trains distributed across the machine's GPUs.">
             <Choice<number>
               value={s.gpuCount}
-              onChange={(gpuCount) => s.set({ gpuCount })}
+              onChange={(gpuCount) => s.set({ gpuCount, regions: [] })}
               options={[1, 2, 4, 8].map((n) => ({ value: n, label: n === 1 ? "1 (single)" : String(n) }))}
             />
           </Row>
