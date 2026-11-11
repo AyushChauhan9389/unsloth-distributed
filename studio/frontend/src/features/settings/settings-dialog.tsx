@@ -90,6 +90,10 @@ const TAB_LOADERS = {
     import("./tabs/connections-tab").then((m) => ({
       default: m.ConnectionsTab,
     })),
+  "cloud-accounts": () =>
+    import("@/features/cloud-jobs/cloud-accounts-dialog").then((m) => ({
+      default: m.CloudAccountsTab,
+    })),
   library: () =>
     import("./tabs/library-tab").then((m) => ({ default: m.LibraryTab })),
   data: () => import("./tabs/data-tab").then((m) => ({ default: m.DataTab })),
@@ -227,6 +231,11 @@ const TABS: TabDef[] = [
   {
     id: "connections",
     labelKey: "settings.tabs.connections",
+    icon: CloudIcon,
+  },
+  {
+    id: "cloud-accounts",
+    labelKey: "settings.tabs.cloudAccounts",
     icon: CloudIcon,
   },
   {
@@ -463,6 +472,7 @@ export function SettingsDialog() {
     browser: null,
     voice: null,
     connections: null,
+    "cloud-accounts": null,
     "keyboard-shortcuts": null,
     library: null,
     data: null,

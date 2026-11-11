@@ -32,15 +32,7 @@ function Connected({ title, lines, onDisconnect }: { title: string; lines: strin
   );
 }
 
-export function CloudAccountsDialog({
-  open,
-  onOpenChange,
-  onChanged,
-}: {
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-  onChanged?: () => void;
-}): ReactElement {
+export function CloudAccountsPanel({ onChanged }: { onChanged?: () => void }): ReactElement {
   const [accounts, setAccounts] = useState<CloudAccounts | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"aws" | "gcp" | null>(null);
@@ -56,8 +48,8 @@ export function CloudAccountsDialog({
     getCloudAccounts().then(setAccounts).catch((e) => setLoadError(errText(e)));
   }, []);
   useEffect(() => {
-    if (open) load();
-  }, [open, load]);
+    load();
+  }, [load]);
 
   const done = (next: CloudAccounts | null, msg: string) => {
     if (next) setAccounts(next);
@@ -103,15 +95,7 @@ export function CloudAccountsDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Cloud accounts</DialogTitle>
-          <DialogDescription>
-            Credentials are checked with the cloud before saving, stored only on this server, and never shown again.
-            Use a dedicated IAM user or service account with only the permissions SkyPilot needs.
-          </DialogDescription>
-        </DialogHeader>
+    <div className="flex flex-col gap-4">
         {loadError && <p className="text-sm text-destructive">{loadError}</p>}
         {!accounts && !loadError && <Spinner className="size-4" />}
         {accounts && (
@@ -190,7 +174,45 @@ export function CloudAccountsDialog({
             </section>
           </div>
         )}
+    </div>
+  );
+}
+
+const ABOUT =
+  "Credentials are checked with the cloud before saving, stored only on this server, and never shown again. " +
+  "Use a dedicated IAM user or service account with only the permissions SkyPilot needs.";
+
+export function CloudAccountsDialog({
+  open,
+  onOpenChange,
+  onChanged,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onChanged?: () => void;
+}): ReactElement {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Cloud accounts</DialogTitle>
+          <DialogDescription>{ABOUT}</DialogDescription>
+        </DialogHeader>
+        {open && <CloudAccountsPanel onChanged={onChanged} />}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Settings tab: same panel, always mounted while the tab is open. */
+export function CloudAccountsTab(): ReactElement {
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h2 className="text-lg font-semibold">Cloud accounts</h2>
+        <p className="text-sm text-muted-foreground">{ABOUT}</p>
+      </div>
+      <CloudAccountsPanel />
+    </div>
   );
 }

@@ -278,6 +278,7 @@ export const SETTINGS_SEARCH_INDEX: Record<SettingsTab, TranslationKey[]> = {
     "settings.agents.dryRun.title",
   ],
   connections: [],
+  "cloud-accounts": [],
   voice: [
     "settings.voice.dictation.sectionTitle",
     "settings.voice.dictation.microphoneLabel",

@@ -14,6 +14,7 @@ export const SETTINGS_TABS = [
   "sandbox",
   "voice",
   "connections",
+  "cloud-accounts",
   "library",
   "data",
   "api-keys",

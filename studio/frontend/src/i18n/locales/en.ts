@@ -1225,6 +1225,7 @@ export const en = {
       chat: "Chat",
       voice: "Voice",
       connections: "Connections",
+      cloudAccounts: "Cloud accounts",
       data: "Data",
       apiKeys: "API",
       remoteLan: "Remote & LAN",
