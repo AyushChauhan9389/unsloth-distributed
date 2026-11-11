@@ -7,8 +7,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { useTrainingConfigStore } from "@/features/training/stores/training-config-store";
 import { cn } from "@/lib/utils";
-import { type ReactElement, type ReactNode, useEffect } from "react";
-import { type GpuOption, type Infra, type Launcher, currentRequestForEstimate, estimateCloudGpu } from "./api";
+import { type ReactElement, type ReactNode, useEffect, useState } from "react";
+import {
+  type GpuOption,
+  type Infra,
+  type Launcher,
+  type QuotaResult,
+  type RegionQuota,
+  checkQuota,
+  currentRequestForEstimate,
+  estimateCloudGpu,
+} from "./api";
+import { CloudAccountsDialog } from "./cloud-accounts-dialog";
 import { type When, useCloudRunStore } from "./cloud-run-store";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -62,6 +72,31 @@ function Choice<T extends string | number | boolean>({
   );
 }
 
+function QuotaBadge({ q }: { q: RegionQuota | undefined }) {
+  if (!q) return null;
+  const free = q.limit != null ? q.limit - (q.used ?? 0) : null;
+  const label =
+    q.status === "ok"
+      ? `quota ${free} ${q.unit ?? ""}`
+      : q.status === "short"
+        ? `quota ${free ?? 0}/${q.need} ${q.unit ?? ""}`
+        : "quota ?";
+  return (
+    <span
+      title={q.detail ?? (q.used == null ? "Limit only: this quota does not report usage" : `${q.used} in use of ${q.limit}`)}
+      className={cn(
+        "rounded-full px-2 py-0.5 text-xs",
+        q.status === "ok" && "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+        q.status === "short" && "bg-destructive/15 text-destructive",
+        (q.status === "unknown" || q.status === "error") && "bg-muted text-muted-foreground",
+      )}
+    >
+      {q.status === "ok" ? "✓ " : q.status === "short" ? "✗ " : ""}
+      {label}
+    </span>
+  );
+}
+
 export function CloudSettingsPanel(): ReactElement {
   const s = useCloudRunStore();
   const configVersion = useTrainingConfigStore((c) => c); // any config change re-estimates the GPU need
@@ -94,6 +129,54 @@ export function CloudSettingsPanel(): ReactElement {
   }, [s.launcher, s.infra, s.useSpot, s.gpuCount, configVersion]);
 
   const selected = s.estimate?.options.find((o) => o.accelerator === s.gpu);
+
+  // Quota for the selected machine in each of its regions, on the connected cloud account.
+  const [quota, setQuota] = useState<QuotaResult | null>(null);
+  const [quotaMsg, setQuotaMsg] = useState<{ kind: "loading" | "connect" | "error"; text: string } | null>(null);
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [quotaTick, setQuotaTick] = useState(0);
+  const quotaInfra = s.infra === "kubernetes" ? null : s.infra;
+  useEffect(() => {
+    setQuota(null);
+    if (s.launcher !== "skypilot" || !quotaInfra || !selected) {
+      setQuotaMsg(null);
+      return;
+    }
+    let cancelled = false;
+    setQuotaMsg({ kind: "loading", text: "Checking quota…" });
+    checkQuota({
+      infra: quotaInfra,
+      accelerator: selected.accelerator,
+      gpu_count: s.gpuCount,
+      use_spot: s.useSpot,
+      instance_type: selected.instance_type,
+      vcpus: selected.vcpus ?? 0,
+      regions: selected.regions.map((r) => r.region),
+    })
+      .then((q) => {
+        if (cancelled) return;
+        setQuota(q);
+        setQuotaMsg(null);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        const text = e instanceof Error ? e.message : String(e);
+        setQuotaMsg(
+          text.includes("not connected")
+            ? { kind: "connect", text: `Connect ${quotaInfra === "aws" ? "AWS" : "Google Cloud"} to see your quota.` }
+            : { kind: "error", text: `Quota check failed: ${text}` },
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the machine, not the estimate object
+  }, [s.launcher, quotaInfra, s.useSpot, s.gpuCount, selected?.accelerator, selected?.instance_type, quotaTick]);
+  const quotaByRegion = new Map((quota?.regions ?? []).map((q) => [q.region, q]));
+  const okRegions = (quota?.regions ?? []).filter((q) => q.status === "ok");
+  const chosenOk = s.regions.length === 0 ? okRegions.length > 0 : s.regions.some((r) => quotaByRegion.get(r)?.status === "ok");
+  const increaseUrl = (quota?.regions ?? []).find((q) => q.url)?.url;
+
   const toggleRegion = (region: string) =>
     s.set({ regions: s.regions.includes(region) ? s.regions.filter((r) => r !== region) : [...s.regions, region] });
 
@@ -122,6 +205,9 @@ export function CloudSettingsPanel(): ReactElement {
                 { value: "kubernetes", label: "Kubernetes" },
               ]}
             />
+            <Button type="button" size="sm" variant="ghost" onClick={() => setAccountsOpen(true)}>
+              Cloud accounts…
+            </Button>
           </Row>
 
           <Row label="Pricing" hint="Spot is cheaper but can be reclaimed; the job resumes from its last checkpoint.">
@@ -236,6 +322,44 @@ export function CloudSettingsPanel(): ReactElement {
                     : `Tried in order: ${s.regions.join(" → ")}`}
                 </span>
               </div>
+              {quotaMsg && (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  {quotaMsg.kind === "loading" && <Spinner className="size-3" />}
+                  <span className={quotaMsg.kind === "error" ? "text-destructive" : "text-muted-foreground"}>
+                    {quotaMsg.text}
+                  </span>
+                  {quotaMsg.kind === "connect" && (
+                    <Button type="button" size="sm" variant="outline" onClick={() => setAccountsOpen(true)}>
+                      Connect
+                    </Button>
+                  )}
+                </div>
+              )}
+              {quota && (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className={chosenOk ? "text-muted-foreground" : "text-destructive"}>
+                    {okRegions.length === 0
+                      ? `No region has enough ${s.useSpot ? "spot" : "on-demand"} quota for this machine on your account.`
+                      : !chosenOk
+                        ? "None of the picked regions has enough quota."
+                        : `${okRegions.length} of ${quota.regions.length} regions have enough quota.`}
+                    {quota.global?.status === "short" &&
+                      ` Project-wide GPU quota is ${quota.global.limit} (${quota.global.used} in use).`}
+                  </span>
+                  {!chosenOk && increaseUrl && (
+                    <a href={increaseUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
+                      Request an increase
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    className="text-muted-foreground underline-offset-2 hover:underline"
+                    onClick={() => setQuotaTick((n) => n + 1)}
+                  >
+                    Recheck
+                  </button>
+                </div>
+              )}
               <div className="flex max-h-56 flex-col overflow-y-auto rounded-lg border">
                 {selected.regions.map((r) => {
                   const order = s.regions.indexOf(r.region);
@@ -254,7 +378,8 @@ export function CloudSettingsPanel(): ReactElement {
                         {r.region}
                         <span className="ml-2 text-xs text-muted-foreground">{r.instance_type}</span>
                       </span>
-                      <span className="tabular-nums text-muted-foreground">
+                      <span className="flex items-center gap-3 tabular-nums text-muted-foreground">
+                        <QuotaBadge q={quotaByRegion.get(r.region)} />
                         {money(r.price)} · spot {money(r.spot_price)}
                       </span>
                     </button>
@@ -348,6 +473,7 @@ export function CloudSettingsPanel(): ReactElement {
           ))}
         </Row>
       )}
+      <CloudAccountsDialog open={accountsOpen} onOpenChange={setAccountsOpen} onChanged={() => setQuotaTick((n) => n + 1)} />
     </div>
   );
 }

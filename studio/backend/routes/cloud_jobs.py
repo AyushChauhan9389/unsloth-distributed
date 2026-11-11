@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from auth.authentication import authenticated_via_api_key, get_current_subject
+from auth.policy import OwnerOnly
 from cloud_jobs import store
 from cloud_jobs.service import cloud_jobs
 from core.training.training import training_backend_override
@@ -110,6 +111,79 @@ async def estimate_cloud_gpu(body: EstimateBody, current_subject: str = Depends(
 @router.get("")
 async def list_cloud_jobs(current_subject: str = Depends(get_current_subject)):
     return [_public(j) for j in store.list_jobs()]
+
+
+# ---- cloud accounts (owner only; secrets are write-only) and quota
+class AwsConnect(BaseModel):
+    access_key_id: str = Field(min_length = 16, max_length = 128)
+    secret_access_key: str = Field(min_length = 16, max_length = 256)
+    region: str = Field("us-east-1", pattern = r"^[a-z]{2}(-[a-z]+)+-\d$")
+    role_arn: Optional[str] = Field(None, pattern = r"^(arn:aws[\w-]*:iam::\d{12}:role/.+)?$")
+
+
+class GcpConnect(BaseModel):
+    key_json: str = Field(min_length = 100, max_length = 20000)
+
+
+@router.get("/clouds", dependencies = [OwnerOnly])
+async def cloud_accounts(current_subject: str = Depends(get_current_subject)):
+    from cloud_jobs import credentials
+    return credentials.status()
+
+
+@router.put("/clouds/aws", dependencies = [OwnerOnly])
+async def connect_aws(body: AwsConnect, current_subject: str = Depends(get_current_subject)):
+    import asyncio
+
+    from cloud_jobs import credentials
+    try:
+        return await asyncio.to_thread(credentials.connect_aws, body.access_key_id, body.secret_access_key,
+                                       body.region, body.role_arn)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.put("/clouds/gcp", dependencies = [OwnerOnly])
+async def connect_gcp(body: GcpConnect, current_subject: str = Depends(get_current_subject)):
+    import asyncio
+
+    from cloud_jobs import credentials
+    try:
+        return await asyncio.to_thread(credentials.connect_gcp, body.key_json)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/clouds/{cloud}", dependencies = [OwnerOnly])
+async def disconnect_cloud(cloud: Literal["aws", "gcp"], current_subject: str = Depends(get_current_subject)):
+    from cloud_jobs import credentials
+    credentials.disconnect(cloud)
+    return credentials.status()
+
+
+class QuotaBody(BaseModel):
+    infra: Literal["gcp", "aws"]
+    accelerator: str = Field(max_length = 64)
+    gpu_count: int = Field(1, ge = 1, le = 16)
+    use_spot: bool = True
+    instance_type: str = Field("", max_length = 64)  # AWS: quota is per instance family, in vCPUs
+    vcpus: int = Field(0, ge = 0, le = 4096)
+    regions: list[str] = Field(max_length = 64)
+
+
+@router.post("/quota")
+async def cloud_quota(body: QuotaBody, current_subject: str = Depends(get_current_subject)):
+    """Per region: enough quota for this machine on the connected account? 409 when the cloud is not connected."""
+    import asyncio
+
+    from cloud_jobs import quota
+    try:
+        if body.infra == "aws":
+            regions = await asyncio.to_thread(quota.aws, body.instance_type, body.vcpus, body.regions, body.use_spot)
+            return {"regions": regions, "global": None}
+        return await asyncio.to_thread(quota.gcp, body.accelerator, body.gpu_count, body.regions, body.use_spot)
+    except LookupError as e:
+        raise HTTPException(409, str(e))
 
 
 @router.get("/{job_id}")

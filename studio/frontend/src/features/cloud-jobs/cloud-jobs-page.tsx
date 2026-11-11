@@ -4,6 +4,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CloudAccountsDialog } from "./cloud-accounts-dialog";
 import { HistoricalTrainingView } from "@/features/studio/historical-training-view";
 import { toast } from "@/lib/toast";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -132,6 +133,7 @@ function JobDetail({ job, onChanged }: { job: CloudJob; onChanged: () => void })
 
 export function CloudJobsPage(): ReactElement {
   const navigate = useNavigate();
+  const [accountsOpen, setAccountsOpen] = useState(false);
   const { job: selectedId } = useSearch({ from: "/cloud-jobs" });
   const [jobs, setJobs] = useState<CloudJob[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +163,11 @@ export function CloudJobsPage(): ReactElement {
             Training runs on cloud GPUs or this machine, now or on a schedule.
           </p>
         </div>
-        <Button onClick={() => navigate({ to: "/studio", search: { cloud: true } })}>New cloud run</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setAccountsOpen(true)}>Cloud accounts</Button>
+          <Button onClick={() => navigate({ to: "/studio", search: { cloud: true } })}>New cloud run</Button>
+        </div>
+        <CloudAccountsDialog open={accountsOpen} onOpenChange={setAccountsOpen} />
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       {jobs && jobs.length === 0 && <p className="text-sm text-muted-foreground">No cloud jobs yet.</p>}

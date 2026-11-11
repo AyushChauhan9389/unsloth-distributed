@@ -141,3 +141,40 @@ export const createCloudJob = (body: {
   schedule?: TaskSchedule | null;
   timezone: string;
 }) => request<CloudJob>("", { method: "POST", body: JSON.stringify(body) });
+
+// ---- cloud accounts (owner only; secrets are write-only) and quota
+export interface CloudAccounts {
+  aws: { account: string; arn: string; region: string; role_arn: string | null; access_key_id: string; saved_at: number } | null;
+  gcp: { client_email: string; project_id: string; saved_at: number } | null;
+}
+export const getCloudAccounts = () => request<CloudAccounts>("/clouds");
+export const connectAws = (body: { access_key_id: string; secret_access_key: string; region: string; role_arn?: string }) =>
+  request<NonNullable<CloudAccounts["aws"]>>("/clouds/aws", { method: "PUT", body: JSON.stringify(body) });
+export const connectGcp = (key_json: string) =>
+  request<NonNullable<CloudAccounts["gcp"]>>("/clouds/gcp", { method: "PUT", body: JSON.stringify({ key_json }) });
+export const disconnectCloud = (cloud: "aws" | "gcp") =>
+  request<CloudAccounts>(`/clouds/${cloud}`, { method: "DELETE" });
+
+export interface RegionQuota {
+  region: string;
+  status: "ok" | "short" | "unknown" | "error";
+  unit?: "vCPUs" | "GPUs";
+  limit?: number;
+  used?: number | null;
+  need?: number;
+  detail?: string;
+  url?: string;
+}
+export interface QuotaResult {
+  regions: RegionQuota[];
+  global: { limit: number; used: number; need: number; status: "ok" | "short" } | null;
+}
+export const checkQuota = (body: {
+  infra: "gcp" | "aws";
+  accelerator: string;
+  gpu_count: number;
+  use_spot: boolean;
+  instance_type: string;
+  vcpus: number;
+  regions: string[];
+}) => request<QuotaResult>("/quota", { method: "POST", body: JSON.stringify(body) });
