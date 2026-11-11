@@ -99,7 +99,8 @@ function QuotaBadge({ q }: { q: RegionQuota | undefined }) {
 
 export function CloudSettingsPanel(): ReactElement {
   const s = useCloudRunStore();
-  const configVersion = useTrainingConfigStore((c) => c); // any config change re-estimates the GPU need
+  // Re-estimate only when the request itself changes; the whole store also changes on unrelated UI updates.
+  const configVersion = useTrainingConfigStore(() => JSON.stringify(currentRequestForEstimate()));
 
   // Live VRAM estimate + GPU catalog for the chosen cloud; pre-picks the cheapest GPU that fits.
   useEffect(() => {
@@ -125,6 +126,7 @@ export function CloudSettingsPanel(): ReactElement {
     return () => {
       cancelled = true;
       window.clearTimeout(id);
+      useCloudRunStore.getState().set({ estimating: false }); // a cancelled call must not leave the spinner on
     };
   }, [s.launcher, s.infra, s.useSpot, s.gpuCount, configVersion]);
 
