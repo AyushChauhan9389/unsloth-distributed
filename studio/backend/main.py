@@ -436,6 +436,7 @@ from routes.systemone import MCP_PATH as DECISIONS_MCP_PATH, RequireStudioAuth
 from routes.systemone import router as systemone_router
 from routes.prompts import router as prompts_router
 from routes.scheduled_tasks import router as scheduled_tasks_router
+from routes.cloud_jobs import router as cloud_jobs_router
 from routes.library import router as library_router
 from routes.profile_stats import router as profile_stats_router
 from auth import policy as auth_policy, storage
@@ -1017,6 +1018,13 @@ async def lifespan(app: FastAPI):
 
     app.state.scheduled_task_scheduler = ScheduledTaskScheduler(app)
     app.state.scheduled_task_scheduler.start()
+
+    try:  # cloud jobs: re-attach running jobs and start their scheduler
+        from cloud_jobs.service import cloud_jobs
+
+        cloud_jobs.start()
+    except Exception as exc:
+        _lifespan_log.warning("starting cloud jobs failed: %s", exc)
 
     from core.inference.chat_generation_runs import ChatGenerationSupervisor
 
@@ -1995,6 +2003,7 @@ app.include_router(mcp_servers_router, prefix = "/api/mcp/servers", tags = ["mcp
 app.include_router(skills_router, prefix = "/api/skills", tags = ["skills"])
 app.include_router(prompts_router, prefix = "/api/prompts", tags = ["prompts"])
 app.include_router(scheduled_tasks_router, prefix = "/api/scheduled-tasks", tags = ["scheduled-tasks"])
+app.include_router(cloud_jobs_router, prefix = "/api/cloud-jobs", tags = ["cloud-jobs"])
 app.include_router(library_router, prefix = "/api/library", tags = ["library"])
 app.include_router(profile_stats_router, prefix = "/api/profile", tags = ["profile"])
 app.include_router(datasets_router, prefix = "/api/datasets", tags = ["datasets"])

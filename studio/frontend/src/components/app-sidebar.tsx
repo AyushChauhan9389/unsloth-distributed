@@ -143,6 +143,7 @@ import {
   LayerIcon,
   ApiIcon,
   Clock01Icon,
+  CloudServerIcon,
 } from "@hugeicons/core-free-icons";
 import { Folder02Icon, FolderExportIcon } from "@/lib/folder-icons";
 import { Copy01Icon } from "@/lib/copy-icon";
@@ -3539,6 +3540,18 @@ export function AppSidebar() {
           </span>
         </button>
       ),
+    },
+    cloudJobs: {
+      icon: CloudServerIcon,
+      label: t("shell.navigation.cloudJobs"),
+      active: pathname === "/cloud-jobs",
+      onClick: () => {
+        navigateFromRow({ to: "/cloud-jobs" });
+        closeMobileIfOpen();
+      },
+      onIntent: () => {
+        preloadSilently(router.preloadRoute({ to: "/cloud-jobs" }));
+      },
     },
   };
   const navRowPinned = (item: SidebarNavItemPref) =>

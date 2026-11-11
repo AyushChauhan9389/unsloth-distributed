@@ -15,6 +15,8 @@ import { Refresh01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PlayIcon } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import { useState } from "react";
+import { CloudRunDialog } from "@/features/cloud-jobs/cloud-run-dialog";
 import { resolveStartTrainingButtonLabelKey } from "./start-training-cta-state";
 
 function resolveStartTrainingError(input: {
@@ -99,6 +101,7 @@ export function StartTrainingCta() {
     useTrainingActions();
 
   const disabled = startBlocked || !isReady;
+  const [cloudOpen, setCloudOpen] = useState(false);
   const buttonLabel = t(
     resolveStartTrainingButtonLabelKey({
       stopRequested,
@@ -152,6 +155,16 @@ export function StartTrainingCta() {
         <PlayIcon strokeWidth={1.75} className="size-4" />
         {buttonLabel}
       </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full justify-center rounded-full"
+        disabled={!isReady}
+        onClick={() => setCloudOpen(true)}
+      >
+        Run on cloud...
+      </Button>
+      <CloudRunDialog open={cloudOpen} onOpenChange={setCloudOpen} />
       {errorMessage && (
         <div
           className={cn(

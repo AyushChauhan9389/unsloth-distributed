@@ -19,6 +19,7 @@ from core.training.account_jobs import (
 )
 from utils.account_context import account_thread, current_account, run_as
 import json as _json
+from contextvars import ContextVar
 import math
 import multiprocessing as mp
 import os
@@ -4037,10 +4038,18 @@ class TrainingBackend:
 
 
 _training_backend = None
+# Cloud jobs: a request scoped to one cloud job sets its backend here, so the existing training routes
+# (status, metrics, progress, stop) serve that job unchanged. Unset everywhere else.
+training_backend_override: "ContextVar[Optional[TrainingBackend]]" = ContextVar(
+    "training_backend_override", default = None
+)
 
 
 def get_training_backend() -> TrainingBackend:
     global _training_backend
+    override = training_backend_override.get()
+    if override is not None:
+        return override
     if _training_backend is None:
         _training_backend = TrainingBackend()
     return _training_backend

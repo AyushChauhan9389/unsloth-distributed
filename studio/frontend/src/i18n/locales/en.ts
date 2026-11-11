@@ -897,6 +897,7 @@ export const en = {
       video: "Video",
       audio: "Audio",
       tasks: "Scheduled",
+      cloudJobs: "Cloud jobs",
       // Hover text while the row spins, before this machine's capability is measured.
       trainChecking: "Checking this machine for training support...",
       videoChecking: "Checking this machine for video support...",

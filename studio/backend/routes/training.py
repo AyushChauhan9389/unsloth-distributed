@@ -2316,6 +2316,9 @@ async def start_training(
     Initiates training in the background and returns immediately. Use /status
     to check progress.
     """
+    from cloud_jobs import store as cloud_store
+    if any(j["resources"].get("launcher") == "local" for j in cloud_store.list_jobs(("launching", "running"))):
+        raise HTTPException(409, "This GPU is busy with a cloud job running on this machine. Wait for it or cancel it in Cloud jobs.")
     await _prepare_training_request(request, via_api_key)
     backend = None
     reserved_start_request_id = None

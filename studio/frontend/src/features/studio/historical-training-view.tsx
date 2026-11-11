@@ -24,7 +24,11 @@ type StudioT = ReturnType<typeof useT>;
 interface HistoricalTrainingViewProps {
   runId: string;
   onResumeStarted?: () => void;
+  /** Cloud jobs: re-fetch every few seconds while the run is in progress, and hide local resume. */
+  live?: boolean;
 }
+
+const LIVE_REFRESH_MS = 5000;
 
 type HistoricalRunResult = {
   runId: string;
@@ -111,7 +115,9 @@ function mapToViewData(
 export function HistoricalTrainingView({
   runId,
   onResumeStarted,
+  live = false,
 }: HistoricalTrainingViewProps): ReactElement {
+  const [refreshTick, setRefreshTick] = useState(0);
   const t = useT();
   const [result, setResult] = useState<HistoricalRunResult | null>(null);
   const [resuming, setResuming] = useState(false);
@@ -157,7 +163,14 @@ export function HistoricalTrainingView({
     return () => {
       controller.abort();
     };
-  }, [runId]);
+  }, [runId, refreshTick]);
+
+  const runStatus = result?.runId === runId ? result.detail?.run.status : undefined;
+  useEffect(() => {
+    if (!live || (runStatus !== undefined && runStatus !== "running")) return;
+    const id = window.setInterval(() => setRefreshTick((n) => n + 1), LIVE_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [live, runStatus]);
 
   useEffect(() => {
     const offUpdated = onTrainingRunUpdated((updated) => {
@@ -198,7 +211,7 @@ export function HistoricalTrainingView({
 
   return (
     <div className="flex flex-col gap-6">
-      {detail.run.can_resume && (
+      {detail.run.can_resume && !live && (
         <div className="flex justify-end">
           <Button
             type="button"
