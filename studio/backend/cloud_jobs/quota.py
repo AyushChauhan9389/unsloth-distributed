@@ -65,12 +65,14 @@ def _norm(s: str) -> str:
     return "".join(c for c in s.upper() if c.isalnum())
 
 
-def _gcp_family_limits(creds, project: str, accelerator: str, use_spot: bool) -> dict:
+def _gcp_family_limits(creds, project: str, base: str, use_spot: bool) -> dict:
     """Per-region limits of Compute's per-GPU-family quota, via the Cloud Quotas API.
     {"limits": {region: n}, "default": n} or {"error": ..., "url": ...} (e.g. the API is not enabled)."""
     from google.auth.transport.requests import AuthorizedSession
 
-    qid = ("PREEMPTIBLE-" if use_spot else "") + "GPUS-PER-GPU-FAMILY-per-project-region"
+    # on-demand: one quota keyed by gpu_family; spot: a separate per-GPU quota, e.g. PREEMPTIBLE-NVIDIA-H100-GPUS-...
+    qid = (f"PREEMPTIBLE-{base.replace('_', '-')}-per-project-region" if use_spot
+           else "GPUS-PER-GPU-FAMILY-per-project-region")
     r = AuthorizedSession(creds).get(f"https://cloudquotas.googleapis.com/v1/projects/{project}/locations/global"
                                      f"/services/compute.googleapis.com/quotaInfos/{qid}", timeout = 60)
     if r.status_code == 403 and "SERVICE_DISABLED" in r.text:
@@ -115,7 +117,7 @@ def gcp(accelerator: str, count: int, regions: list[str], use_spot: bool) -> dic
             req = compute.regions().list_next(req, resp)
         family = None  # newer GPUs (H100, H200, B200, RTX PRO 6000...) only have a per-GPU-family quota
         if not any(metric in m for m in by_region.values()):
-            family = _gcp_family_limits(creds, project, accelerator, use_spot)
+            family = _gcp_family_limits(creds, project, base, use_spot)
         out = []
         for region in regions:
             q = by_region.get(region, {}).get(metric)
