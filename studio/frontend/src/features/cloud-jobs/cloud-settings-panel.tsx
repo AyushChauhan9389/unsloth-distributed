@@ -156,8 +156,8 @@ export function CloudSettingsPanel(): ReactElement {
                       <th className="px-3 py-2 font-medium">GPU</th>
                       <th className="px-3 py-2 font-medium">VRAM</th>
                       <th className="px-3 py-2 font-medium">Machine (vCPU / RAM)</th>
-                      <th className="px-3 py-2 text-right font-medium">On-demand</th>
-                      <th className="px-3 py-2 text-right font-medium">Spot</th>
+                      <th className="px-3 py-2 text-right font-medium" title="Cheapest region">On-demand (from)</th>
+                      <th className="px-3 py-2 text-right font-medium" title="Cheapest region; may differ from the on-demand region">Spot (from)</th>
                     </tr>
                   </thead>
                   <tbody>
